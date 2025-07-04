@@ -1,0 +1,10 @@
+# Даже не начинаю собирать compose для кафки.
+version: '3.8'
+services:
+  flask-app:
+    build:
+      context: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app

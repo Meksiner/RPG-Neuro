@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with RPG-Neuro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #chat-box {
+            height: 70vh;
+            overflow-y: auto;
+        }
+        .message {
+            margin: 1rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #3b82f6;
+            color: white;
+            margin-left: auto;
+        }
+        .bot-message {
+            background-color: #e5e7eb;
+            color: black;
+            margin-right: auto;
+        }
+        #sidebar {
+            width: 250px;
+            overflow-y: auto;
+        }
+        .chat-item {
+            padding: 0.5rem;
+            cursor: pointer;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .chat-item:hover {
+            background-color: #f3f4f6;
+        }
+        .chat-item.active {
+            background-color: #bfdbfe;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex min-h-screen">
+    <!-- Sidebar for chat selection -->
+    <div id="sidebar" class="bg-white shadow-lg p-4">
+        <h2 class="text-lg font-bold mb-4">Chats</h2>
+        <button id="new-chat-btn" class="bg-green-500 text-white p-2 rounded mb-4 w-full hover:bg-green-600">New Chat</button>
+        <div id="chat-list"></div>
+    </div>
+    <!-- Main chat area -->
+    <div class="flex-grow p-4 flex flex-col">
+        <h1 class="text-2xl font-bold text-center mb-4">Chat with RPGneuro</h1>
+        <div id="chat-box" class="bg-white rounded-lg shadow-lg p-4 mb-4 flex-grow"></div>
+        <div class="flex">
+            <input type="text" id="question" class="flex-grow p-2 border rounded-l-lg focus:outline-none" placeholder="Type your question..." />
+            <button id="send-btn" class="bg-blue-500 text-white p-2 rounded-r-lg hover:bg-blue-600">Send</button>
+        </div>
+    </div>
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const questionInput = document.getElementById('question');
+        const sendBtn = document.getElementById('send-btn');
+        const chatList = document.getElementById('chat-list');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        let currentChatId = null;
+
+        function addMessage(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            messageDiv.textContent = content;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function clearChatBox() {
+            chatBox.innerHTML = '';
+        }
+
+        async function loadChats() {
+            try {
+                const response = await fetch('/list_chats');
+                const data = await response.json();
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, false);
+                    return;
+                }
+                chatList.innerHTML = '';
+                data.chats.forEach(chat => {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = `chat-item ${chat.chat_id === currentChatId ? 'active' : ''}`;
+                    chatItem.textContent = chat.preview;
+                    chatItem.dataset.chatId = chat.chat_id;
+                    chatItem.addEventListener('click', () => selectChat(chat.chat_id));
+                    chatList.appendChild(chatItem);
+                });
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, false);
+            }
+        }
+
+        async function selectChat(chatId) {
+            currentChatId = chatId;
+            clearChatBox();
+            try {
+                const response = await fetch(`/get_chat/${chatId}`);
+                const data = await response.json();
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, false);
+                    return;
+                }
+                data.history.forEach(([question, answer]) => {
+                    addMessage(question, true);
+                    addMessage(answer, false);
+                });
+                // Update active chat in sidebar
+                document.querySelectorAll('.chat-item').forEach(item => {
+                    item.classList.toggle('active', item.dataset.chatId === chatId);
+                });
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, false);
+            }
+        }
+
+        async function createNewChat() {
+            try {
+                const response = await fetch('/create_chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await response.json();
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, false);
+                    return;
+                }
+                currentChatId = data.chat_id;
+                clearChatBox();
+                await loadChats();
+                selectChat(currentChatId);
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, false);
+            }
+        }
+
+        async function sendQuestion() {
+            const question = questionInput.value.trim();
+            if (!question || !currentChatId) {
+                if (!currentChatId) addMessage('Please select or create a chat.', false);
+                return;
+            }
+
+            addMessage(question, true);
+            questionInput.value = '';
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, chat_id: currentChatId })
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, false);
+                } else {
+                    addMessage(data.answer, false);
+                    // Update chat preview in sidebar
+                    await loadChats();
+                }
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, false);
+            }
+        }
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendQuestion);
+        questionInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendQuestion();
+        });
+        newChatBtn.addEventListener('click', createNewChat);
+
+        // Load chats on page load
+        loadChats();
+    </script>
+</body>
+</html>
